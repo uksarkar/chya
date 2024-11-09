@@ -58,14 +58,14 @@ interface Attr {
 }
 
 export function createComponent<T extends keyof HTMLElementTagNameMap>(
-  tag: T | typeof createComponent<T>,
+  tag: T | 0 | typeof createComponent<T>,
   attributes?: Attr | null,
   children?:
     | ImplicitChyaElement
     | ImplicitChyaElement[]
     | (() => ImplicitChyaElement),
   ...elements: ImplicitChyaElement[]
-): HTMLElementTagNameMap[T] {
+): HTMLElementTagNameMap[T] | DocumentFragment {
   if (isFn(tag)) {
     return tag({
       ...(attributes || {}),
@@ -85,10 +85,16 @@ export function createComponent<T extends keyof HTMLElementTagNameMap>(
     ) as HTMLElementTagNameMap[T];
   }
 
-  const element = document.createElement(tag as T);
+  const element =
+    tag === 0
+      ? document.createDocumentFragment()
+      : document.createElement(tag as T);
 
   // attr
-  if (!isEmpty(attributes)) {
+  if (
+    !isEmpty(attributes) &&
+    element.nodeType !== Node.DOCUMENT_FRAGMENT_NODE
+  ) {
     Object.keys(attributes).forEach(key => {
       const value = attributes[key as keyof unknown];
 
@@ -106,21 +112,21 @@ export function createComponent<T extends keyof HTMLElementTagNameMap>(
               const val = cls();
 
               if (!isEmpty(val)) {
-                addClass(element, val!);
+                addClass(element as HTMLElement, val!);
 
                 if (referenceCls && referenceCls !== val!) {
-                  removeClass(element, referenceCls);
+                  removeClass(element as HTMLElement, referenceCls);
                 }
 
                 referenceCls = val!;
               } else if (referenceCls) {
-                removeClass(element, referenceCls);
+                removeClass(element as HTMLElement, referenceCls);
               }
             });
           } else if (Array.isArray(cls)) {
             cls.forEach(cl => handleCls(cl));
           } else {
-            addClass(element, cls);
+            addClass(element as HTMLElement, cls);
           }
         };
 
@@ -142,13 +148,13 @@ export function createComponent<T extends keyof HTMLElementTagNameMap>(
           const attrVal = value();
 
           if (!isEmpty(attrVal)) {
-            element.setAttribute(key, attrVal!);
+            (element as HTMLElement).setAttribute(key, attrVal!);
           } else {
-            element.removeAttribute(key);
+            (element as HTMLElement).removeAttribute(key);
           }
         });
       } else {
-        element.setAttribute(key, value);
+        (element as HTMLElement).setAttribute(key, value);
       }
     });
   }
@@ -156,6 +162,10 @@ export function createComponent<T extends keyof HTMLElementTagNameMap>(
   // children
   const addOrRemoveElement = (elm: ChyaElement | false, ref?: ChyaElement) => {
     if (!elm && ref) {
+      if (ref.nodeType === Node.COMMENT_NODE) {
+        return ref;
+      }
+
       const newRef = document.createComment("removed");
       element.replaceChild(newRef, ref);
 
@@ -163,11 +173,18 @@ export function createComponent<T extends keyof HTMLElementTagNameMap>(
     }
 
     if (elm && ref) {
+      if (element.contains(elm)) {
+        return elm;
+      }
+
       element.replaceChild(elm, ref);
       return elm;
     }
 
     if (elm && !ref) {
+      if (element.contains(elm)) {
+        return elm;
+      }
       element.appendChild(elm);
       return elm;
     }
@@ -194,10 +211,15 @@ export function createComponent<T extends keyof HTMLElementTagNameMap>(
         let ref: ChyaElement | undefined;
         if (isFn(child)) {
           createEffect(() => {
-            ref = addOrRemoveElement(
-              intoElement(child() as ImplicitChyaElement),
-              ref
-            );
+            const items = child();
+            if (Array.isArray(items)) {
+              // TODO: array implementation
+            } else {
+              ref = addOrRemoveElement(
+                intoElement(items as ImplicitChyaElement),
+                ref
+              );
+            }
           });
         } else {
           addOrRemoveElement(intoElement(child));

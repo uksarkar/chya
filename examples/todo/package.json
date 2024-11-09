@@ -1,5 +1,5 @@
 {
-  "name": "@chya/examples.web",
+  "name": "@chya/examples.todo",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,7 +10,8 @@
     "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
-    "@chya/ui": "*"
+    "@chya/ui": "*",
+    "sass": "^1.80.6"
   },
   "devDependencies": {
     "@chya/core": "*",

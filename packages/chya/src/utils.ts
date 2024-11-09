@@ -73,7 +73,8 @@ export const addClass = (
   if (Array.isArray(cls)) {
     element.classList.add(...cls);
   } else if (!isEmpty(cls)) {
-    element.classList.add(cls);
+    const items = cls.split(" ").filter(c => !isEmpty(c));
+    element.classList.add(...items);
   }
 };
 
@@ -84,6 +85,7 @@ export const removeClass = (
   if (Array.isArray(cls)) {
     element.classList.remove(...cls);
   } else if (!isEmpty(cls)) {
-    element.classList.remove(cls);
+    const items = cls.split(" ").filter(c => !isEmpty(c));
+    element.classList.remove(...items);
   }
 };
