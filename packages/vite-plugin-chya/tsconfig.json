@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "Node",
+        "declaration": true,
+        "outDir": "./dist",
+        "paths": {
+            "@chya/babel-plugin-chya": [
+                "../babel-plugin-chya/src"
+            ],
+            "vite": [
+                "../../node_modules/vite"
+            ]
+        }
+    },
+    "include": [
+        "src"
+    ]
+}

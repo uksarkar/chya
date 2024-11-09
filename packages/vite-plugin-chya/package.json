@@ -1,0 +1,36 @@
+{
+  "name": "@chya/vite-plugin-chya",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    "types": "./dist/index.d.ts",
+    "import": "./dist/index.mjs",
+    "node": "./dist/index.js",
+    "require": "./dist/index.js",
+    "default": "./dist/index.mjs"
+  },
+  "author": "Utpal Sarkar",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@babel/core": "^7.26.0",
+    "@chya/babel-plugin-chya": "*",
+    "vitefu": "^1.0.3"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-react": "^7.25.9",
+    "@babel/preset-typescript": "^7.26.0",
+    "@types/babel__core": "^7.20.5",
+    "@types/node": "^22.9.0",
+    "rollup": "^4.24.4",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
