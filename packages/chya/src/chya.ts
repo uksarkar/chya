@@ -1,33 +1,53 @@
-// Global variables
-
-import { ChyaElement, ImplicitChyaElement } from "./interfaces";
+import { ChyaElementConditionStrategy } from "./enums/ChyaElementConditionStrategy";
+import { ChyaTagType } from "./enums/ChyaTagType";
 import {
-  addClass,
-  compare,
-  intoElement,
+  ChyaElement,
+  ChyaElementAttributeValue,
+  ChyaElementExtends,
+  ChyaSignalEffect
+} from "./interfaces";
+import {
+  addOrRemoveAttribute,
+  buildDomElement,
+  isNotEqual,
   isEmpty,
   isFn,
-  removeClass
+  removeClass,
+  addClass
 } from "./utils";
 
-let activeEffect: (() => void) | null = null;
+let activeEffect: ChyaSignalEffect | null = null;
 
 // State
-export function createEffect(fn: () => void) {
+export function createEffect(fn: ChyaSignalEffect): () => void | undefined {
   activeEffect = fn;
   fn();
   activeEffect = null;
+
+  return fn.clean as () => void;
 }
 
+export function createSignal<T = unknown>(): [
+  () => T | undefined,
+  (value: T | undefined | ((state: T | undefined) => T | undefined)) => void
+];
 export function createSignal<T>(
   init: T | (() => T)
-): [() => T, (value: T | ((state: T) => T)) => void] {
+): [() => T, (value: T | ((state: T) => T)) => void];
+export function createSignal<T>(
+  init?: T | (() => T)
+): [
+  () => T | undefined,
+  (value: T | undefined | ((state: T | undefined) => T | undefined)) => void
+] {
   let value = isFn(init) ? init() : init;
   const subscribers = new Set<() => void>();
 
-  const set = (val: T | ((state: T) => T)) => {
+  const set = (
+    val: T | undefined | ((state: T | undefined) => T | undefined)
+  ) => {
     const newValue = (isFn(val) ? val(value) : val) as T;
-    const hasChange = compare(value, newValue);
+    const hasChange = isNotEqual(value, newValue);
 
     // assignment
     value = newValue;
@@ -40,6 +60,11 @@ export function createSignal<T>(
   const get = () => {
     if (!isEmpty(activeEffect)) {
       subscribers.add(activeEffect);
+
+      // attach the cleaner
+      activeEffect.clean = () => {
+        subscribers?.delete(activeEffect!);
+      };
     }
 
     return value;
@@ -48,228 +73,257 @@ export function createSignal<T>(
   return [get, set];
 }
 
-interface Attr {
-  class?:
+// Component
+function handleClassAttributes(
+  elm: ChyaElement,
+  classes:
     | string
-    | (string | (() => string | undefined | null | []))[]
-    | (() => string | undefined | null | []);
-  [key: `on:${string}`]: () => void;
-  "c-bind"?: ReturnType<typeof createSignal<string>>;
+    | string[]
+    | (() => string | string | string[] | undefined | null)
+    | (string | (() => string | string | string[] | undefined | null))[]
+) {
+  const handler = (
+    cls: string | string | string[] | undefined | null,
+    ref?: string | string | string[] | undefined | null
+  ) => {
+    const notEqRef = isNotEqual(cls, ref);
+    if (!isEmpty(ref) && notEqRef) {
+      removeClass(elm, ref);
+    }
+
+    if (notEqRef) {
+      addClass(elm, cls);
+      return true;
+    }
+    return false;
+  };
+
+  const handleFn = (
+    fnClass: () => string | string | string[] | undefined | null
+  ) => {
+    let ref: string | string | string[] | undefined | null;
+
+    elm.addDependencies?.(
+      createEffect(() => {
+        const actualClass = fnClass();
+        if (handler(actualClass, ref)) {
+          ref = actualClass;
+        }
+      })
+    );
+  };
+
+  if (Array.isArray(classes)) {
+    classes.forEach(cls => {
+      if (isFn(cls)) {
+        handleFn(cls);
+      } else {
+        handler(cls);
+      }
+    });
+  } else if (isFn(classes)) {
+    handleFn(classes);
+  } else {
+    handler(classes);
+  }
+}
+
+// TODO: handling attributes could be simplify by using compiler, now handling everything on the runtime
+// - differentiate the attributes (classes, events, normal attributes)
+// - handle them via different method so no without using any module
+// - shouldn't be used/included into the bundle
+function handleElementAttributes(
+  element: ChyaElement,
+  attr: Record<string, ChyaElementAttributeValue>
+) {
+  Object.keys(attr).forEach(key => {
+    const value = attr[key];
+    // handle classes
+    if (key === "class") {
+      handleClassAttributes(element, value);
+      return;
+    }
+
+    // handle events
+    if (isFn(value) && key.startsWith("on")) {
+      element.addEventListener(key.substring(2).toLowerCase(), value);
+      return;
+    }
+
+    // handle other attributes
+    if (isFn(value)) {
+      let refValue: string | string[] | undefined | null;
+      element.addDependencies?.(
+        createEffect(() => {
+          const actualValue = value();
+          const notEq = isNotEqual(refValue, actualValue);
+
+          if (!isEmpty(refValue) && notEq) {
+            addOrRemoveAttribute(element, key, refValue);
+          }
+
+          if (notEq) {
+            addOrRemoveAttribute(element, key, actualValue);
+            refValue = actualValue;
+          }
+        })
+      );
+    } else {
+      addOrRemoveAttribute(element, key, value);
+    }
+  });
 }
 
 export function createComponent<T extends keyof HTMLElementTagNameMap>(
-  tag: T | 0 | typeof createComponent<T>,
-  attributes?: Attr | null,
-  children?:
-    | ImplicitChyaElement
-    | ImplicitChyaElement[]
-    | (() => ImplicitChyaElement),
-  ...elements: ImplicitChyaElement[]
-): HTMLElementTagNameMap[T] | DocumentFragment {
-  if (isFn(tag)) {
-    return tag({
-      ...(attributes || {}),
-      children,
-      elements
-    }) as HTMLElementTagNameMap[T];
+  tag: T,
+  attr?: Record<string, ChyaElementAttributeValue>,
+  ...children: (
+    | ChyaElement
+    | ((Text | Comment | DocumentFragment) & ChyaElementExtends)
+  )[]
+): ChyaElement<T> {
+  const element = buildDomElement(tag);
+
+  if (!isEmpty(attr)) {
+    handleElementAttributes(element, attr);
   }
 
-  if (
-    (tag === "input" || tag === "textarea") &&
-    attributes &&
-    attributes["c-bind"]
-  ) {
-    return inputComponent(
-      tag,
-      attributes as InputOption
-    ) as HTMLElementTagNameMap[T];
-  }
-
-  const element =
-    tag === 0
-      ? document.createDocumentFragment()
-      : document.createElement(tag as T);
-
-  // attr
-  if (
-    !isEmpty(attributes) &&
-    element.nodeType !== Node.DOCUMENT_FRAGMENT_NODE
-  ) {
-    Object.keys(attributes).forEach(key => {
-      const value = attributes[key as keyof unknown];
-
-      // classes
-      if (key === "class") {
-        if (isEmpty(value)) {
-          return;
-        }
-
-        const handleCls = (cls: Attr["class"]) => {
-          if (isFn(cls)) {
-            let referenceCls: string | string[] | undefined | null;
-
-            createEffect(() => {
-              const val = cls();
-
-              if (!isEmpty(val)) {
-                addClass(element as HTMLElement, val!);
-
-                if (referenceCls && referenceCls !== val!) {
-                  removeClass(element as HTMLElement, referenceCls);
-                }
-
-                referenceCls = val!;
-              } else if (referenceCls) {
-                removeClass(element as HTMLElement, referenceCls);
-              }
-            });
-          } else if (Array.isArray(cls)) {
-            cls.forEach(cl => handleCls(cl));
-          } else {
-            addClass(element as HTMLElement, cls);
-          }
-        };
-
-        handleCls(value as Attr["class"]);
-
-        return;
-      }
-
-      // events
-      if (key.startsWith("on:")) {
-        if (isFn(value)) {
-          element.addEventListener(key.replace("on:", ""), value);
-        }
-        return;
-      }
-
-      if (isFn(value)) {
-        createEffect(() => {
-          const attrVal = value();
-
-          if (!isEmpty(attrVal)) {
-            (element as HTMLElement).setAttribute(key, attrVal!);
-          } else {
-            (element as HTMLElement).removeAttribute(key);
-          }
-        });
-      } else {
-        (element as HTMLElement).setAttribute(key, value);
+  if (children.length) {
+    children.forEach(child => {
+      element.appendChild(child);
+      if (isFn(child.clean)) {
+        element.addDependencies?.(() => child?.clean?.());
       }
     });
-  }
-
-  // children
-  const addOrRemoveElement = (elm: ChyaElement | false, ref?: ChyaElement) => {
-    if (!elm && ref) {
-      if (ref.nodeType === Node.COMMENT_NODE) {
-        return ref;
-      }
-
-      const newRef = document.createComment("removed");
-      element.replaceChild(newRef, ref);
-
-      return newRef;
-    }
-
-    if (elm && ref) {
-      if (element.contains(elm)) {
-        return elm;
-      }
-
-      element.replaceChild(elm, ref);
-      return elm;
-    }
-
-    if (elm && !ref) {
-      if (element.contains(elm)) {
-        return elm;
-      }
-      element.appendChild(elm);
-      return elm;
-    }
-
-    const newRef = document.createComment("future");
-    element.appendChild(newRef);
-
-    return newRef;
-  };
-
-  const handleChild = (
-    childItems:
-      | ImplicitChyaElement
-      | ImplicitChyaElement[]
-      | (() => ImplicitChyaElement)
-  ) => {
-    if (isFn(childItems)) {
-      let ref: ChyaElement | undefined;
-      createEffect(() => {
-        ref = addOrRemoveElement(intoElement(childItems()), ref);
-      });
-    } else if (Array.isArray(childItems)) {
-      childItems.forEach(child => {
-        let ref: ChyaElement | undefined;
-        if (isFn(child)) {
-          createEffect(() => {
-            const items = child();
-            if (Array.isArray(items)) {
-              // TODO: array implementation
-            } else {
-              ref = addOrRemoveElement(
-                intoElement(items as ImplicitChyaElement),
-                ref
-              );
-            }
-          });
-        } else {
-          addOrRemoveElement(intoElement(child));
-        }
-      });
-    } else {
-      addOrRemoveElement(intoElement(childItems));
-    }
-  };
-
-  if (!isEmpty(children)) {
-    handleChild(children);
-  }
-
-  if (!isEmpty(elements)) {
-    handleChild(elements);
   }
 
   return element;
 }
 
-export function textComponent(text: () => string): Text {
-  const t = document.createTextNode("");
-  createEffect(() => {
-    t.textContent = text();
-  });
+export function textComponent(text: () => string) {
+  const t = buildDomElement(ChyaTagType.Text, "");
+  t.addDependencies?.(
+    createEffect(() => {
+      t.textContent = text();
+    })
+  );
 
   return t;
 }
+type ConditionalComponentProps<T extends keyof HTMLElementTagNameMap> =
+  | {
+      tag: Parameters<typeof createComponent<T>>[0];
+      attr: Parameters<typeof createComponent<T>>[1];
+      children: Parameters<typeof createComponent<T>>[3];
+    }
+  | {
+      tag: "input" | "textarea";
+      attr: Parameters<typeof createComponent<T>>[1];
+      event?: "change" | "input";
+      bindings?: ReturnType<typeof createSignal<string>>;
+    };
 
-interface InputOption extends Attr {
-  "c-bind"?: ReturnType<typeof createSignal<string>>;
-  "c-event"?: "change" | "input";
+function isInputOrTextareaProps<T extends keyof HTMLElementTagNameMap>(
+  props: ConditionalComponentProps<T>
+): props is {
+  tag: "input" | "textarea";
+  attr: Parameters<typeof createComponent<T>>[1];
+  event?: "change" | "input";
+  bindings?: ReturnType<typeof createSignal<string>>;
+} {
+  return props.tag === "input" || props.tag === "textarea";
 }
 
-function inputComponent(tag: "input" | "textarea", attr?: InputOption) {
-  const { "c-bind": cBind, "c-event": cEvent, ...attrs } = attr || {};
-  const input = createComponent(tag, attrs) as HTMLInputElement;
+export function conditionalComponent<T extends keyof HTMLElementTagNameMap>(
+  props: ConditionalComponentProps<T>,
+  condition: ReturnType<typeof createSignal<boolean>>[0],
+  strategy: ChyaElementConditionStrategy = ChyaElementConditionStrategy.Display
+) {
+  if (strategy === ChyaElementConditionStrategy.Display) {
+    const element = isInputOrTextareaProps(props)
+      ? inputComponent(props.tag, props.bindings, props.event, props.attr)
+      : createComponent(props.tag, props.attr, props.children);
+
+    element.addDependencies?.(
+      createEffect(() => {
+        element.style.display = condition() ? "" : "none";
+      })
+    );
+
+    return element;
+  }
+
+  // Remove Strategy: Conditionally add or remove element from the DOM
+  let element:
+    | ReturnType<typeof createComponent<T | "input" | "textarea">>
+    | undefined;
+  let placeholder: (Comment & ChyaElementExtends) | undefined;
+  let parentNode: Node | undefined | null;
+
+  const dep = createEffect(() => {
+    // Identify parentNode once on the first effect run
+    if (!parentNode) {
+      parentNode = element?.parentNode || placeholder?.parentNode;
+    }
+
+    if ((element || placeholder) && !parentNode) {
+      throw new Error("Unable to find the parent node");
+    }
+
+    // Conditionally render the element or placeholder
+    if (condition()) {
+      if (!element) {
+        element = isInputOrTextareaProps(props)
+          ? inputComponent(props.tag, props.bindings, props.event, props.attr)
+          : createComponent(props.tag, props.attr, props.children);
+      }
+      if (placeholder && parentNode?.contains(placeholder)) {
+        parentNode.replaceChild(element, placeholder);
+        placeholder = undefined;
+      }
+    } else {
+      if (!placeholder) {
+        placeholder = buildDomElement(ChyaTagType.Comment, "hidden");
+      }
+      if (element && parentNode?.contains(element)) {
+        element.stage = 0;
+        element.clean?.();
+        parentNode.replaceChild(placeholder, element);
+        element = undefined;
+      }
+    }
+  });
+
+  (element || placeholder)?.addDependencies?.(() => {
+    if ((element || placeholder)!.stage !== 0) {
+      dep();
+    }
+  });
+
+  return element || placeholder!;
+}
+
+export function inputComponent(
+  tag: "input" | "textarea",
+  bindings?: ReturnType<typeof createSignal<string>>,
+  event?: "input" | "change",
+  attr?: Record<string, ChyaElementAttributeValue>
+) {
+  const input = createComponent(tag, attr);
 
   // Initial setting of input value
-  if (cBind?.[0]) {
-    createEffect(() => {
-      input.value = cBind?.[0]();
-    });
+  if (bindings?.[0]) {
+    input.addDependencies?.(
+      createEffect(() => {
+        input.value = bindings?.[0]();
+      })
+    );
   }
 
   // Update signal when input changes
-  if (cBind?.[1]) {
-    input.addEventListener(cEvent || "input", e =>
-      cBind?.[1]((e.target as HTMLInputElement).value)
+  if (bindings?.[1]) {
+    input.addEventListener(event || "input", e =>
+      bindings?.[1]((e.target as HTMLInputElement).value)
     );
   }
 

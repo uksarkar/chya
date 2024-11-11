@@ -1,9 +1,23 @@
-export type ChyaElement =
-  | HTMLElement
-  | SVGElement
-  | Comment
-  | Text
-  | DocumentFragment;
+export type ChyaElementExtends = {
+  stage?: number;
+  dependencies?: Set<() => void>;
+  addDependencies?: (dependency?: () => void) => void;
+  clean?: () => void;
+};
+export type ChyaElement<
+  T extends keyof HTMLElementTagNameMap | undefined = undefined
+> = (T extends keyof HTMLElementTagNameMap
+  ? HTMLElementTagNameMap[T]
+  : HTMLElement) &
+  ChyaElementExtends;
+
+export type ChyaElementAttributeValue =
+  | string
+  | string[]
+  | (() => string | undefined | null);
+
+export  type ChyaSignalEffect = (() => void) & { clean?: () => void };
+
 export type ImplicitChyaElement = ChyaElement | string | number | boolean;
 export type ChyaElementKey =
   | string
