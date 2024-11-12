@@ -1,4 +1,5 @@
 import {
+  ChyaElementConditionStrategy,
   conditionalComponent,
   createComponent,
   createSignal,
@@ -16,16 +17,14 @@ export const App = () => {
     textComponent(text),
     createComponent("br"),
     inputComponent("input", [text, setText], "input", {
-      placeholder: "Type your name"
+      placeholder: "Type your name",
+      class: ["hello", text]
     }),
     conditionalComponent(
-      {
-        tag: "input",
-        attr: { placeholder: "Conditional", "data-cls": cls },
-        bindings: [cls, setCls]
-      },
+      "input",
+      { bindings: [cls, setCls], class: ["hello", text] },
       () => text().length % 3 === 0,
-      1
+      ChyaElementConditionStrategy.Remove
     )
   );
 };

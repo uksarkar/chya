@@ -1,3 +1,5 @@
+import { createSignal } from "./chya";
+
 export type ChyaElementExtends = {
   stage?: number;
   dependencies?: Set<() => void>;
@@ -16,7 +18,13 @@ export type ChyaElementAttributeValue =
   | string[]
   | (() => string | undefined | null);
 
-export  type ChyaSignalEffect = (() => void) & { clean?: () => void };
+export type ChyaClassAttributeValue =
+  | string
+  | string[]
+  | (() => string | string | string[] | undefined | null)
+  | (string | (() => string | string | string[] | undefined | null))[];
+
+export type ChyaSignalEffect = (() => void) & { clean?: () => void };
 
 export type ImplicitChyaElement = ChyaElement | string | number | boolean;
 export type ChyaElementKey =
@@ -37,4 +45,9 @@ export interface ChyaComponentOption<T> {
   classes?: string | string[] | (() => string | undefined | null | string[]);
   attributes?: Record<string, string | (() => string | undefined | null)>;
   styles?: ElementCSSInlineStyle;
+}
+
+export interface InputTextareaAttributes {
+  event?: "input" | "change";
+  bindings?: ReturnType<typeof createSignal<string>>;
 }

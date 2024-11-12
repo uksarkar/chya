@@ -1,10 +1,12 @@
 import { ChyaElementConditionStrategy } from "./enums/ChyaElementConditionStrategy";
 import { ChyaTagType } from "./enums/ChyaTagType";
 import {
+  ChyaClassAttributeValue,
   ChyaElement,
   ChyaElementAttributeValue,
   ChyaElementExtends,
-  ChyaSignalEffect
+  ChyaSignalEffect,
+  InputTextareaAttributes
 } from "./interfaces";
 import {
   addOrRemoveAttribute,
@@ -13,7 +15,8 @@ import {
   isEmpty,
   isFn,
   removeClass,
-  addClass
+  addClass,
+  isInputOrTextareaTag
 } from "./utils";
 
 let activeEffect: ChyaSignalEffect | null = null;
@@ -76,11 +79,7 @@ export function createSignal<T>(
 // Component
 function handleClassAttributes(
   elm: ChyaElement,
-  classes:
-    | string
-    | string[]
-    | (() => string | string | string[] | undefined | null)
-    | (string | (() => string | string | string[] | undefined | null))[]
+  classes: ChyaClassAttributeValue
 ) {
   const handler = (
     cls: string | string | string[] | undefined | null,
@@ -134,13 +133,15 @@ function handleClassAttributes(
 // - shouldn't be used/included into the bundle
 function handleElementAttributes(
   element: ChyaElement,
-  attr: Record<string, ChyaElementAttributeValue>
+  attr:
+    | Record<string, ChyaElementAttributeValue>
+    | { class: ChyaClassAttributeValue }
 ) {
   Object.keys(attr).forEach(key => {
-    const value = attr[key];
+    const value = attr[key as keyof unknown] as ChyaElementAttributeValue;
     // handle classes
     if (key === "class") {
-      handleClassAttributes(element, value);
+      handleClassAttributes(element, value as ChyaClassAttributeValue);
       return;
     }
 
@@ -169,14 +170,20 @@ function handleElementAttributes(
         })
       );
     } else {
-      addOrRemoveAttribute(element, key, value);
+      addOrRemoveAttribute(
+        element,
+        key,
+        value as string | string[] | undefined | null
+      );
     }
   });
 }
 
 export function createComponent<T extends keyof HTMLElementTagNameMap>(
   tag: T,
-  attr?: Record<string, ChyaElementAttributeValue>,
+  attr?:
+    | Record<string, ChyaElementAttributeValue>
+    | { class: ChyaClassAttributeValue },
   ...children: (
     | ChyaElement
     | ((Text | Comment | DocumentFragment) & ChyaElementExtends)
@@ -210,39 +217,37 @@ export function textComponent(text: () => string) {
 
   return t;
 }
-type ConditionalComponentProps<T extends keyof HTMLElementTagNameMap> =
-  | {
-      tag: Parameters<typeof createComponent<T>>[0];
-      attr: Parameters<typeof createComponent<T>>[1];
-      children: Parameters<typeof createComponent<T>>[3];
-    }
-  | {
-      tag: "input" | "textarea";
-      attr: Parameters<typeof createComponent<T>>[1];
-      event?: "change" | "input";
-      bindings?: ReturnType<typeof createSignal<string>>;
-    };
-
-function isInputOrTextareaProps<T extends keyof HTMLElementTagNameMap>(
-  props: ConditionalComponentProps<T>
-): props is {
-  tag: "input" | "textarea";
-  attr: Parameters<typeof createComponent<T>>[1];
-  event?: "change" | "input";
-  bindings?: ReturnType<typeof createSignal<string>>;
-} {
-  return props.tag === "input" || props.tag === "textarea";
-}
 
 export function conditionalComponent<T extends keyof HTMLElementTagNameMap>(
-  props: ConditionalComponentProps<T>,
+  tag: "input" | "textarea",
+  attributes:
+    | InputTextareaAttributes
+    | Parameters<typeof createComponent<T>>[1],
   condition: ReturnType<typeof createSignal<boolean>>[0],
-  strategy: ChyaElementConditionStrategy = ChyaElementConditionStrategy.Display
+  strategy?: ChyaElementConditionStrategy
+): ChyaElement<"input" | "textarea">;
+export function conditionalComponent<T extends keyof HTMLElementTagNameMap>(
+  tag: T,
+  attributes: Parameters<typeof createComponent<T>>[1],
+  condition: ReturnType<typeof createSignal<boolean>>[0],
+  strategy?: ChyaElementConditionStrategy,
+  ...children: Parameters<typeof createComponent<T>>[2][]
+): ChyaElement<T>;
+export function conditionalComponent<T extends keyof HTMLElementTagNameMap>(
+  tag: T,
+  attributes:
+    | InputTextareaAttributes
+    | Parameters<typeof createComponent<T>>[1],
+  condition: ReturnType<typeof createSignal<boolean>>[0],
+  strategy: ChyaElementConditionStrategy = ChyaElementConditionStrategy.Display,
+  ...children: Parameters<typeof createComponent<T>>[2][]
 ) {
+  const { bindings, event, ...attr } = (attributes ||
+    {}) as InputTextareaAttributes;
   if (strategy === ChyaElementConditionStrategy.Display) {
-    const element = isInputOrTextareaProps(props)
-      ? inputComponent(props.tag, props.bindings, props.event, props.attr)
-      : createComponent(props.tag, props.attr, props.children);
+    const element = isInputOrTextareaTag(tag)
+      ? inputComponent(tag, bindings, event, attr)
+      : createComponent(tag, attr, ...children);
 
     element.addDependencies?.(
       createEffect(() => {
@@ -273,9 +278,9 @@ export function conditionalComponent<T extends keyof HTMLElementTagNameMap>(
     // Conditionally render the element or placeholder
     if (condition()) {
       if (!element) {
-        element = isInputOrTextareaProps(props)
-          ? inputComponent(props.tag, props.bindings, props.event, props.attr)
-          : createComponent(props.tag, props.attr, props.children);
+        element = isInputOrTextareaTag(tag)
+          ? inputComponent(tag, bindings, event, attr)
+          : createComponent(tag, attr, ...children);
       }
       if (placeholder && parentNode?.contains(placeholder)) {
         parentNode.replaceChild(element, placeholder);
@@ -307,7 +312,7 @@ export function inputComponent(
   tag: "input" | "textarea",
   bindings?: ReturnType<typeof createSignal<string>>,
   event?: "input" | "change",
-  attr?: Record<string, ChyaElementAttributeValue>
+  attr?: Parameters<typeof createComponent<"input" | "textarea">>[1]
 ) {
   const input = createComponent(tag, attr);
 

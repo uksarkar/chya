@@ -162,3 +162,9 @@ export function addOrRemoveAttribute(
     element.setAttribute(key, value);
   }
 }
+
+export function isInputOrTextareaTag<T extends keyof HTMLElementTagNameMap>(
+  tag: T | "input" | "textarea"
+): tag is "input" | "textarea" {
+  return tag === "input" || tag === "textarea";
+}
