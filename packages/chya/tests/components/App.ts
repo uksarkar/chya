@@ -1,11 +1,11 @@
 import {
-  ChyaElementConditionStrategy,
   conditionalComponent,
   createComponent,
   createSignal,
   inputComponent,
   textComponent
-} from "@chya/core";
+} from "../../src/chya";
+import { ChyaElementConditionStrategy } from "../../src/enums/ChyaElementConditionStrategy";
 
 export const App = () => {
   const [text, setText] = createSignal("");
@@ -22,7 +22,7 @@ export const App = () => {
     }),
     conditionalComponent(
       "input",
-      { bindings: [cls, setCls], class: ["hello", text] },
+      { bindings: [cls, setCls], class: ["conditional", text] },
       () => !!text().length && text().length % 3 === 0,
       ChyaElementConditionStrategy.Remove
     )

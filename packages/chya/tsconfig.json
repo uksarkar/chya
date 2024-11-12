@@ -1,4 +1,10 @@
 {
   "extends": "@chya/typescript-config/vite.json",
-  "include": ["src"]
+  "include": [
+    "src/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
